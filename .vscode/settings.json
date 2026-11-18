@@ -1,3 +1,6 @@
 {
-    "python-envs.defaultEnvManager": "ms-python.python:system"
+    "python-envs.defaultEnvManager": "ms-python.python:system",
+    "notebook.markup.fontSize": 12,
+    "notebook.output.fontSize": 12,
+    "notebook.output.lineHeight": 18
 }
