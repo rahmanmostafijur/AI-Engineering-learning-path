@@ -2,3 +2,4 @@
 .ruff_cache
 *.ipynb.bak
 _backup_before_fix/
+.env
