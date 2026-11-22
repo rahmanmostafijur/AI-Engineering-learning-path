@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head><meta charset="UTF-8"><title>Chat</title></head>
+<body>
+  <input id="box" placeholder="প্রশ্ন লেখো" size="40">
+  <button id="btn" onclick="send()">পাঠাও</button>
+  <p id="out"></p>
+
+  <script>
+    function send() {
+  const out = document.getElementById("out");
+  const btn = document.getElementById("btn");
+  out.textContent = "ভাবছি...";
+  btn.disabled = true;
+  let first = true;
+
+  const prompt = document.getElementById("box").value;
+  const es = new EventSource("http://127.0.0.1:8000/chat?prompt=" + encodeURIComponent(prompt));
+
+  es.onmessage = (e) => {
+    if (first) { out.textContent = ""; first = false; }
+    out.textContent += e.data;
+  };
+  es.onerror = () => {
+    es.close();
+    btn.disabled = false;
+    if (first) out.textContent = "দুঃখিত, সংযোগে সমস্যা হয়েছে।";
+  };
+}
+  </script>
+</body>
+</html>
