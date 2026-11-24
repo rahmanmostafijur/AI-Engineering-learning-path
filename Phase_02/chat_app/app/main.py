@@ -1,16 +1,17 @@
 from database import get_db
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from models import Conversation, User
+from llm import get_reply
+from models import Conversation, Message, User
 from schemas import (
     ConversationCreate,
     ConversationResponse,
+    MessageCreate,
+    MessageResponse,
     Token,
     UserCreate,
     UserLogin,
     UserResponse,
-    MessageCreate,
-
 )
 from security import (
     create_access_token,
@@ -95,7 +96,8 @@ def list_conversations(
     )
     return conversations
 
-@app.post("/conversations/{conversation_id}/messages")
+
+@app.post("/conversations/{conversation_id}/messages", response_model=MessageResponse)
 def send_message(
     conversation_id: int,
     data: MessageCreate,
@@ -104,9 +106,58 @@ def send_message(
 ):
     conversation = (
         db.query(Conversation)
-        .filter(Conversation.id == conversation_id, Conversation.user_id == current_user.id)
+        .filter(
+            Conversation.id == conversation_id, Conversation.user_id == current_user.id
+        )
         .first()
     )
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
-    return {"status": "ok"}
+    user_message = Message(
+        conversation_id=conversation.id, role="user", content=data.content
+    )
+    db.add(user_message)
+    db.commit()
+    db.refresh(user_message)
+    history = (
+        db.query(Message)
+        .filter(Message.conversation_id == conversation.id)
+        .order_by(Message.id)
+        .all()
+    )
+    messages = [{"role": m.role, "content": m.content} for m in history]
+    reply = get_reply(messages)
+    assistant_message = Message(
+        conversation_id=conversation.id, role="assistant", content=reply
+    )
+    db.add(assistant_message)
+    db.commit()
+    db.refresh(assistant_message)
+    return assistant_message
+
+
+@app.get(
+    "/conversations/{conversation_id}/messages", response_model=list[MessageResponse]
+)
+def get_messages(
+    conversation_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    conversation = (
+        db.query(Conversation)
+        .filter(
+            Conversation.id == conversation_id,
+            Conversation.user_id == current_user.id,
+        )
+        .first()
+    )
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    messages = (
+        db.query(Message)
+        .filter(Message.conversation_id == conversation.id)
+        .order_by(Message.id)
+        .all()
+    )
+    return messages
