@@ -1,7 +1,8 @@
-from database import get_db
+from database import get_db, SessionLocal
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from llm import get_reply
+from llm import get_reply, stream_reply
 from models import Conversation, Message, User
 from schemas import (
     ConversationCreate,
@@ -161,3 +162,51 @@ def get_messages(
         .all()
     )
     return messages
+
+
+@app.post("/conversations/{conversation_id}/stream")
+def stream_message(
+    conversation_id: int,
+    data: MessageCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    conversation = (
+        db.query(Conversation)
+        .filter(
+            Conversation.id == conversation_id,
+            Conversation.user_id == current_user.id,
+        )
+        .first()
+    )
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    user_message = Message(
+        conversation_id=conversation.id, role="user", content=data.content
+    )
+    db.add(user_message)
+    db.commit()
+    db.refresh(user_message)
+    history = (
+        db.query(Message)
+        .filter(Message.conversation_id == conversation.id)
+        .order_by(Message.id)
+        .all()
+    )
+    messages = [{"role": m.role, "content": m.content} for m in history]
+
+    def events():
+        pieces = []
+        for piece in stream_reply (messages):
+            pieces.append(piece)
+            yield f"data: {piece}\n\n"
+        full_reply = "".join(pieces)
+        with SessionLocal() as new_db:
+            assistant_message = Message(
+                conversation_id=conversation_id,
+                role="assistant",
+                content=full_reply,
+            )
+            new_db.add(assistant_message)
+            new_db.commit()
+    return StreamingResponse(events(), media_type="text/event-stream")
